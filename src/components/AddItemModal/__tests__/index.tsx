@@ -1,136 +1,243 @@
-import '@testing-library/jest-dom'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import React from 'react'
-import * as FormHooks from 'react-hook-form'
-import * as sphinx from 'sphinx-bridge'
-import { AddItemModal } from '..'
-import { colors } from '../../../utils/colors'
-import { getLSat } from '../../../utils/getLSat'
-// import * as lsatJs from 'lsat-js'
+import "@testing-library/jest-dom";
+import React from "react";
+import {
+  fireEvent,
+  queryAllByText,
+  queryByText,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { setupStore } from "__test__/__mockData__/setupStore";
+import { mockUsehistory } from "__test__/__mockFn__/useHistory";
+import nock from "nock";
+import { user } from "__test__/__mockData__/user";
+import { person } from "__test__/__mockData__/persons";
+import { Organization } from "store/main";
+import { uiStore } from "store/ui";
+import { mainStore } from "../../../store/main";
+import OrganizationView from "../OrganizationView";
 
-jest.mock('sphinx-bridge')
-jest.mock('lsat-js')
-jest.mock('../../../utils/getLSat')
+beforeAll(() => {
+  nock.disableNetConnect();
+  setupStore();
+  mockUsehistory();
+});
 
-jest.mock('~/stores/useModalStore', () => ({
-  ...jest.requireActual('~/stores/useModalStore'),
-  useModal: (id: string) => ({
-    close: jest.fn(),
-    open: jest.fn(),
-    visible: id === 'addItem',
-  }),
-}))
+jest.mock("react-router-dom", () => ({
+  ...jest.requireActual("react-router-dom"),
+  useRouteMatch: () => ({ url: "", path: "" }),
+}));
 
-const rednerAndInitForm = async () => {
-  function getButtonByText(text: 'Prev' | 'Next') {
-    return screen.getByText(text)
-  }
+const organizations: Organization[] = [
+  {
+    bounty_count: 0,
+    created: "2024-01-03T20:34:09.585609Z",
+    deleted: false,
+    id: "51",
+    img: "",
+    name: "TEST_NEW",
+    owner_pubkey:
+      "03cbb9c01cdcf91a3ac3b543a556fbec9c4c3c2a6ed753e19f2706012a26367ae3",
+    show: false,
+    updated: "2024-01-03T20:34:09.585609Z",
+    uuid: "cmas9gatu2rvqiev4ur0",
+  },
+  {
+    bounty_count: 0,
+    created: "2024-01-03T20:34:09.585609Z",
+    deleted: false,
+    id: "52",
+    img: "",
+    name: "TEST_SECOND",
+    owner_pubkey:
+      "03cbb9c01cdcf91a3ac3b543a556fbec9c4c3c2a6ed753e19f2706012a26367ae3",
+    show: false,
+    updated: "2024-01-03T20:34:09.585609Z",
+    uuid: "cmas9gatu2rvqiev4ur0",
+  },
+];
 
-  const result = render(<AddItemModal />)
-  const { container } = result
+describe("OrganizationView Component", () => {
+  nock(user.url).get("/person/id/1").reply(200, {});
+  it("renders organization names correctly", async () => {
+    jest.spyOn(mainStore, "getUserRoles").mockReturnValue(Promise.resolve([]));
+    jest
+      .spyOn(mainStore, "getOrganizationUser")
+      .mockReturnValue(Promise.resolve(person as any));
+    mainStore.setOrganizations(organizations);
 
-  expect(screen.getByTestId('SourceTypeStep')).toBeInTheDocument()
+    render(<OrganizationView person={person} />);
 
-  fireEvent.click(screen.getByText('Type'))
-  fireEvent.click(screen.getByText('Corporation'))
+    const organizationName = screen.getByText(organizations[0].name);
+    const secondOrganization = screen.getByText(organizations[1].name);
+    expect(organizationName).toBeInTheDocument();
+    expect(secondOrganization).toBeInTheDocument();
+  });
 
-  fireEvent.click(getButtonByText('Next'))
-  expect(getButtonByText('Prev')).toBeInTheDocument()
+  it("renders view bounties button correctly", async () => {
+    jest.spyOn(mainStore, "getUserRoles").mockReturnValue(Promise.resolve([]));
+    jest
+      .spyOn(mainStore, "getOrganizationUser")
+      .mockReturnValue(Promise.resolve(person as any));
+    mainStore.setOrganizations([organizations[0]]);
 
-  fireEvent.click(getButtonByText('Next'))
+    render(<OrganizationView person={person} />);
 
-  await userEvent.type(container.querySelector('#cy-item-name')!, 'testName')
+    const viewBountiesBtn = screen.getByRole("button", {
+      name: "View Bounties open_in_new_tab",
+    });
+    expect(viewBountiesBtn).toBeInTheDocument();
+  });
 
-  fireEvent.click(getButtonByText('Next'))
+  it("should not render manage bounties button if user does not have access", async () => {
+    jest.spyOn(mainStore, "getUserRoles").mockReturnValue(Promise.resolve([]));
+    jest
+      .spyOn(mainStore, "getOrganizationUser")
+      .mockReturnValue(Promise.resolve({} as any));
+    mainStore.setOrganizations([organizations[0]]);
 
-  return result
-}
+    render(<OrganizationView person={person} />);
 
-describe('AddItemModal', () => {
-  it('renders AddItemModal component correctly with correct props', async () => {
-    const { container } = render(<AddItemModal />)
+    const manageButton = screen.queryAllByRole("button", { name: "Manage" });
+    expect(manageButton.length).toBe(0);
+  });
 
-    const modal = container.querySelector('#addItem')
+  it("renders manage bounties button if user is owner correctly", async () => {
+    jest.spyOn(mainStore, "getUserRoles").mockReturnValue(Promise.resolve([]));
+    jest
+      .spyOn(mainStore, "getOrganizationUser")
+      .mockReturnValue(Promise.resolve(person as any));
+    const userOrg = {
+      ...organizations[0],
+      owner_pubkey: person.owner_pubkey,
+    };
+    mainStore.setOrganizations([userOrg]);
 
-    expect(modal).toBeInTheDocument()
-    expect(modal).toHaveAttribute('kind', 'small')
-    expect(modal).toHaveStyle(`background: ${colors.BG1}`)
-  })
+    render(<OrganizationView person={person} />);
 
-  it('useForm hook is initialized with the correct default values and mode', async () => {
-    const mockFormHooks = jest.spyOn(FormHooks, 'useForm')
+    const manageButton = screen.getByRole("button", { name: "Manage" });
+    expect(manageButton).toBeInTheDocument();
+  });
 
-    const mockUseForm = FormHooks.useForm
+  it("test owner can view all the organizations which is a part of", async () => {
+    jest.spyOn(mainStore, "getUserRoles").mockReturnValue(Promise.resolve([]));
+    jest
+      .spyOn(mainStore, "getOrganizationUser")
+      .mockReturnValue(Promise.resolve(person as any));
+    mainStore.setOrganizations(organizations);
 
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    mockUseForm.mockImplementation(() => ({
-      control: jest.fn(),
-      watch: jest.fn(),
-      handleSubmit: jest.fn(),
-      reset: jest.fn(),
-    }))
+    render(<OrganizationView person={person} />);
 
-    render(<AddItemModal />)
+    organizations.forEach((org: Organization) => {
+      const organizationName = screen.getByText(org.name);
+      expect(organizationName).toBeInTheDocument();
+    });
+  });
 
-    await waitFor(() => {
-      expect(mockUseForm).toHaveBeenCalled()
+  it('clicking on "manage" takes me to the organization admin page in the same window', async () => {
+    jest.spyOn(mainStore, "getUserRoles").mockReturnValue(Promise.resolve([]));
+    jest
+      .spyOn(mainStore, "getOrganizationUser")
+      .mockReturnValue(Promise.resolve(person as any));
+    mainStore.setOrganizations(organizations);
+    uiStore.setMeInfo({
+      pubkey: person.owner_pubkey,
+      owner_pubkey: person.owner_pubkey,
+      photo_url: "",
+      alias: "hhh",
+      img: "",
+      route_hint: "",
+      contact_key: "xxxxx",
+      price_to_meet: 0,
+      jwt: "yyyyy",
+      tribe_jwt: "",
+      url: "",
+      description: "desc",
+      verification_signature: "",
+      extras: {},
+      isSuperAdmin: false,
+    });
 
-      expect(mockUseForm).toHaveBeenCalledWith(
-        expect.objectContaining({
-          mode: 'onChange',
-        }),
-      )
-    })
+    const { getByText, queryAllByText, queryByText } = render(
+      <OrganizationView person={person} />
+    );
 
-    mockFormHooks.mockRestore()
-  })
+    await waitFor(() => queryAllByText("Manage"));
 
-  it('navigates between steps correctly', async () => {
-    const { container } = render(<AddItemModal />)
+    fireEvent.click(queryAllByText("Manage")[0]);
 
-    function getButtonByText(text: 'Prev' | 'Next') {
-      return screen.getByText(text)
-    }
+    await waitFor(() => queryByText(organizations[0].name));
 
-    expect(screen.getByTestId('SourceTypeStep')).toBeInTheDocument()
-    expect(getButtonByText('Next')).toBeDisabled()
+    expect(getByText(organizations[0].name)).toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByText('Type'))
-    fireEvent.click(screen.getByText('Corporation'))
+  it('test clicking on "View bounties" takes me to the organization overview page if there are bounties', async () => {
+    const _organizations = JSON.parse(JSON.stringify(organizations));
+    _organizations[0].bounty_count = 100;
+    const mockWindowOpen = jest
+      .spyOn(window, "open")
+      .mockImplementation(jest.fn());
+    jest.spyOn(mainStore, "getUserRoles").mockReturnValue(Promise.resolve([]));
+    jest
+      .spyOn(mainStore, "getOrganizationUser")
+      .mockReturnValue(Promise.resolve(person as any));
+    mainStore.setOrganizations(_organizations);
 
-    expect(getButtonByText('Next')).not.toBeDisabled()
+    render(<OrganizationView person={person} />);
 
-    fireEvent.click(getButtonByText('Next'))
+    const firstBtn = screen.getAllByText("View Bounties")[0];
+    fireEvent.click(firstBtn);
 
-    expect(screen.queryByTestId('SourceStep')).toBeInTheDocument()
-    expect(getButtonByText('Prev')).toBeInTheDocument()
+    expect(firstBtn).not.toBeDisabled();
+    expect(mockWindowOpen).toHaveBeenCalledWith(
+      `/org/bounties/${_organizations[0].uuid}`,
+      "_target"
+    );
+    mockWindowOpen.mockRestore();
+  });
 
-    fireEvent.click(getButtonByText('Prev'))
-    expect(screen.getByTestId('SourceTypeStep')).toBeInTheDocument()
+  it('test if there are no bounties, the "View bounties" button should be greyed and unclickable', async () => {
+    const _organizations = JSON.parse(JSON.stringify(organizations));
+    _organizations[0].bounty_count = 0;
 
-    fireEvent.click(getButtonByText('Next'))
+    jest.spyOn(mainStore, "getUserRoles").mockReturnValue(Promise.resolve([]));
+    jest
+      .spyOn(mainStore, "getOrganizationUser")
+      .mockReturnValue(Promise.resolve(person as any));
+    mainStore.setOrganizations(_organizations);
 
-    expect(getButtonByText('Next')).toBeDisabled()
-    await userEvent.type(container.querySelector('#cy-item-name')!, 'testName')
+    render(<OrganizationView person={person} />);
 
-    expect(getButtonByText('Next')).not.toBeDisabled()
-    fireEvent.click(getButtonByText('Next'))
+    const firstBtn = screen.getAllByText("View Bounties")[0];
+    expect(firstBtn).toBeDisabled();
+  });
 
-    expect(screen.getByTestId('BudgetStep')).toBeInTheDocument()
-  })
+  it('test owner can click on "add organization" and a pop-up appears to guide through the add organization flow', async () => {
+    jest.spyOn(mainStore, "getUserRoles").mockReturnValue(Promise.resolve([]));
+    jest
+      .spyOn(mainStore, "getOrganizationUser")
+      .mockReturnValue(Promise.resolve(person as any));
+    mainStore.setOrganizations(organizations);
 
-  it('mock the API call to submit the form data and verify the form submission process', async () => {
-    await rednerAndInitForm()
-    fireEvent.click(screen.getByText('Approve'))
+    render(<OrganizationView person={person} />);
 
-    await waitFor(() => {
-      expect(sphinx.enable).toHaveBeenCalled()
-    })
+    fireEvent.click(screen.getByText("Add Organization"));
+    expect(screen.getByText("Add New Organization")).toBeInTheDocument();
+  });
 
-    await waitFor(() => {
-      expect(getLSat).toHaveBeenCalled()
-    })
-  })
-})
+  it('test if there are no organizations, the "No organization yet" image is displayed', async () => {
+    jest.spyOn(mainStore, "getUserRoles").mockReturnValue(Promise.resolve([]));
+    jest
+      .spyOn(mainStore, "getOrganizationUser")
+      .mockReturnValue(Promise.resolve(person as any));
+    mainStore.setOrganizations([]);
+
+    const { container } = render(<OrganizationView person={person} />);
+
+    const emptyResult = container.querySelector(
+      'div[src="/static/no_org.png"]'
+    );
+    expect(emptyResult).toBeInTheDocument();
+  });
+});
